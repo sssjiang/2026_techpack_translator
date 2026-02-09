@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  translator:
+    build: .
+    image: techpack-translator:latest
+    container_name: techpack-translator
+    volumes:
+      # 挂载输入输出目录
+      - ./input:/app/input
+      - ./output:/app/output
+      # 挂载配置文件
+      - ./config:/app/config
+      # 挂载日志目录
+      - ./logs:/app/logs
+      # 挂载字体目录
+      - ./fonts:/app/fonts
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Google Translate API密钥（如果使用）
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      # DeepL API密钥（如果使用）
+      - DEEPL_API_KEY=${DEEPL_API_KEY:-}
+    # 默认命令：显示帮助
+    command: ["--help"]
+    
+  # API服务模式
+  api:
+    build: .
+    image: techpack-translator:latest
+    container_name: techpack-translator-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./fonts:/app/fonts
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - DEEPL_API_KEY=${DEEPL_API_KEY:-}
+    command: ["python", "api.py"]
+    restart: unless-stopped
+
+# 使用示例:
+# 
+# 1. 构建镜像:
+#    docker-compose build
+#
+# 2. 翻译单个文件:
+#    docker-compose run --rm translator input/sample.png output/sample_zh.png
+#
+# 3. 批量翻译:
+#    docker-compose run --rm translator --batch input/ output/
+#
+# 4. 启动API服务:
+#    docker-compose up api
+#    然后访问 http://localhost:8000/docs

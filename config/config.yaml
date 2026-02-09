@@ -1,0 +1,86 @@
+# Tech Pack Translator Configuration
+
+ocr:
+  engine: tesseract  # Options: paddleocr, tesseract, easyocr, google_vision
+  languages: 
+    - en
+    - ch
+  use_gpu: false
+  det_db_thresh: 0.3
+  det_db_box_thresh: 0.6
+  rec_batch_num: 6
+
+translation:
+  engine: google  # Options: google, deepl, local, marian
+  source_lang: en
+  target_lang: zh-cn
+  api_key: null  # Set your API key here or use environment variable
+  use_cache: true
+  terminology_file: config/terminology.json
+
+detection:
+  # Design pack image detection methods
+  methods:
+    - text_annotation  # Detect by "Design pack image" label
+    - visual_features  # Detect by color complexity
+    - ml_classifier    # Use trained model (optional)
+  
+  # Text detection for design pack labels
+  keywords:
+    - "design pack image"
+    - "design pack"
+    - "设计包图像"
+    - "图案"
+  
+  # Minimum confidence for detection
+  confidence_threshold: 0.7
+  
+  # Protection margin (pixels)
+  protection_margin: 10
+
+rendering:
+  # Font settings
+  fonts:
+    default: SimHei  # Default Chinese font
+    fallback: Arial
+    table: SimHei
+    title: SimHei
+  
+  font_size:
+    auto: true  # Auto-detect and match original size
+    min: 8
+    max: 72
+  
+  # Layout preservation
+  preserve_layout: true
+  preserve_alignment: true
+  preserve_spacing: true
+  
+  # Text fitting
+  auto_resize: true
+  allow_line_break: true
+  shrink_factor: 0.8  # Minimum font size ratio
+  
+  # Background inpainting
+  inpaint_method: telea  # Options: telea, ns
+  background_color: auto  # auto, white, or RGB tuple
+
+output:
+  format: png  # Options: png, jpg, pdf
+  quality: 95
+  dpi: 300
+  save_metadata: true
+  generate_preview: true
+  comparison_mode: side_by_side  # Options: side_by_side, overlay, none
+
+logging:
+  level: INFO  # Options: DEBUG, INFO, WARNING, ERROR
+  file: logs/translator.log
+  console: true
+  
+performance:
+  use_multiprocessing: true
+  max_workers: 4
+  batch_size: 10
+  cache_ocr_results: true
+  cache_translations: true

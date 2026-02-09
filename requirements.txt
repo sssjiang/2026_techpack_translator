@@ -1,0 +1,42 @@
+# Core dependencies
+numpy>=1.24.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+scipy>=1.11.0
+
+# OCR engines
+paddleocr>=2.7.0
+paddlepaddle>=2.5.0
+pytesseract>=0.3.10
+easyocr>=1.7.0
+
+# Deep learning
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Translation
+googletrans==4.0.0rc1
+deep-translator>=1.11.0
+transformers>=4.35.0
+
+# Image processing
+scikit-image>=0.21.0
+imutils>=0.5.4
+
+# Text detection (craft-text-detector 单独安装，避免 opencv 版本冲突)
+# craft-text-detector>=0.4.3
+
+# API and web framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+
+# Utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+loguru>=0.7.0
+
+# Font handling
+fonttools>=4.44.0
