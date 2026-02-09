@@ -38,54 +38,15 @@ techpack-translator/
 
 ## 快速开始
 
-### 使用Docker（推荐）
+### 使用Docker
 
 ```bash
 # 构建镜像
 docker-compose build
 
 # 运行翻译
-docker-compose run translator python main.py input.png output.png
-
-# 或使用API服务
-docker-compose up
-curl -X POST -F "file=@input.png" http://localhost:8000/translate -o output.png
+docker-compose run --rm translator input/techpack_img.png output/techpack_img_zh.png
 ```
-
-### 本地安装
-
-```bash
-# 安装依赖
-pip install -r requirements.txt
-
-# 运行
-python main.py input.png output.png --target-lang zh
-```
-
-## 配置说明
-
-编辑 `config/config.yaml`:
-
-```yaml
-ocr:
-  engine: paddleocr  # 可选: paddleocr, google_vision, tesseract
-  languages: [en, ch]
-
-translation:
-  engine: google  # 可选: google, deepl, local
-  api_key: YOUR_API_KEY
-  source_lang: en
-  target_lang: zh
-
-rendering:
-  font_family: SimHei
-  auto_resize: true
-  preserve_layout: true
-```
-
-## API文档
-
-启动服务后访问: http://localhost:8000/docs
 
 ## 许可证
 
