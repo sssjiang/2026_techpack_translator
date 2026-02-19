@@ -164,13 +164,19 @@ class TechPackTranslator:
                 protection_mask
             )
             
-            # 保存输出
+            # 保存输出（若输出路径含目录则先创建；同名文件会直接覆盖）
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
             cv2.imwrite(output_path, output_image)
             logger.info(f"Output saved to: {output_path}")
             
             # 生成对比图（如果配置启用）
             if self.config.get('output', {}).get('generate_preview', False):
                 comparison_path = output_path.replace('.', '_comparison.')
+                comp_dir = os.path.dirname(comparison_path)
+                if comp_dir:
+                    os.makedirs(comp_dir, exist_ok=True)
                 comparison = self.renderer.create_comparison(
                     original_image, output_image,
                     mode=self.config.get('output', {}).get('comparison_mode', 'side_by_side')

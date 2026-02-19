@@ -22,6 +22,7 @@ wheels/
 
 # Virtual environments
 venv/
+.venv/
 env/
 ENV/
 
@@ -37,7 +38,6 @@ logs/
 *.log
 
 # Output files
-output/
 debug_*.png
 *_comparison.png
 
@@ -67,3 +67,8 @@ htmlcov/
 
 # Docker
 .dockerignore
+
+# Config files  
+config/config.yaml
+
+.specstory/

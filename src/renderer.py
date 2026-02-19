@@ -9,6 +9,9 @@ from PIL import Image, ImageDraw, ImageFont
 from typing import List, Dict, Tuple, Optional
 from loguru import logger
 import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 class ImageRenderer:
@@ -29,24 +32,32 @@ class ImageRenderer:
         fonts = {}
         self._cjk_font_path = None  # 记录找到的 CJK 字体路径
 
-        # 常用中文字体路径
+        # 常用中文字体路径（含 macOS / Linux / Windows）
         font_paths = [
+            str(ROOT / "fonts"),  # 项目 fonts 目录优先
+            '/System/Library/Fonts/Supplemental/',  # macOS 补充字体
+            '/System/Library/Fonts/',               # macOS 系统字体
+            '/Library/Fonts/',                       # macOS 用户字体
             '/usr/share/fonts/opentype/noto/',
             '/usr/share/fonts/truetype/noto/',
             '/usr/share/fonts/truetype/',
             '/usr/share/fonts/opentype/',
-            '/System/Library/Fonts/',
             'C:/Windows/Fonts/',
-            'fonts/',  # 项目fonts目录
         ]
 
-        # 尝试加载常用中文字体
+        # 尝试加载常用中文字体（支持 CJK 的优先）
         font_names = [
-            'NotoSansCJK-Regular.ttc',  # 思源黑体
-            'NotoSerifCJK-Regular.ttc', # 思源宋体
-            'SimHei.ttf',      # 黑体
-            'SimSun.ttf',      # 宋体
-            'Arial.ttf',       # Arial (备用)
+            'NotoSansCJK-Regular.ttc',
+            'NotoSerifCJK-Regular.ttc',
+            'PingFang.ttc',           # macOS 苹方
+            'PingFang SC.ttc',
+            'Heiti.ttc',              # macOS 黑体
+            'STHeiti Light.ttc',
+            'STHeiti Medium.ttc',
+            'SimHei.ttf',
+            'SimSun.ttf',
+            'Arial Unicode.ttf',
+            'Arial.ttf',
         ]
 
         for base_path in font_paths:
@@ -74,8 +85,10 @@ class ImageRenderer:
                         logger.debug(f"Failed to load {font_path}: {e}")
 
         if not fonts:
-            logger.warning("No fonts loaded, using default")
-            # 使用默认字体
+            logger.warning(
+                "No CJK fonts found. Chinese will show as boxes. "
+                "Add a font (e.g. NotoSansCJK-Regular.ttc) to project 'fonts/' folder."
+            )
             for size in [12, 16, 20, 24, 32]:
                 fonts[f"default_{size}"] = ImageFont.load_default()
 

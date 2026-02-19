@@ -1,0 +1,96 @@
+# =============================================================================
+# Tech Pack Translator 配置示例
+# =============================================================================
+# 使用说明：
+# 1. 复制本文件并重命名为 config.yaml（或修改 main.py 的 --config 指向此文件）
+# 2. 按下方各节说明填写 API Key、引擎等，保存后运行程序即可
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# OCR 配置（文字识别与定位）
+# -----------------------------------------------------------------------------
+ocr:
+  engine: qwen_ocr  # 当前代码已只支持 Qwen-OCR
+  languages:
+    - en
+    - ch
+  use_gpu: false
+  det_db_thresh: 0.3
+  det_db_box_thresh: 0.6
+  rec_batch_num: 6
+
+  # ----- 仅当 engine 为 qwen_ocr 时需要 -----
+  # 阿里云百炼 Qwen-OCR，文档: https://help.aliyun.com/zh/model-studio/qwen-vl-ocr
+  api_key: XXX          # 在此填写 API Key，或设置环境变量 DASHSCOPE_API_KEY
+  base_url: https://dashscope.aliyuncs.com/api/v1  # 北京；弗吉尼亚: https://dashscope-us.aliyuncs.com/api/v1；新加坡: https://dashscope-intl.aliyuncs.com/api/v1
+  model: qwen-vl-ocr-latest
+  min_pixels: 3072
+  max_pixels: 8388608
+  enable_rotate: false  # 是否自动矫正倾斜图像
+
+# -----------------------------------------------------------------------------
+# 翻译配置
+# -----------------------------------------------------------------------------
+translation:
+  engine: deepl         # 当前代码已只支持 DeepL
+  source_lang: en       # 源语言（一般为英文）
+  target_lang: zh       # 目标语言：zh(中文) / zh-cn / en 等
+  api_key: XXX          # 在此填写 DeepL API Key，或使用环境变量 DEEPL_API_KEY
+  use_cache: true
+  terminology_file: config/terminology.json  # 专业术语表（可选）
+
+  # DeepL Key 说明：
+  # - 免费版 Key 以 :fx 结尾，例如 xxxxxxxx:fx
+  # - 可直接写在 api_key 字段，或通过环境变量 DEEPL_API_KEY 提供
+
+detection:
+  methods:
+    - text_annotation
+    - visual_features
+    - ml_classifier
+  keywords:
+    - "design pack image"
+    - "design pack"
+    - "设计包图像"
+    - "图案"
+  confidence_threshold: 0.7
+  protection_margin: 10
+
+rendering:
+  fonts:
+    default: SimHei
+    fallback: Arial
+    table: SimHei
+    title: SimHei
+  font_size:
+    auto: true
+    min: 8
+    max: 72
+  preserve_layout: true
+  preserve_alignment: true
+  preserve_spacing: true
+  auto_resize: true
+  allow_line_break: true
+  shrink_factor: 0.8
+  inpaint_method: telea
+  background_color: auto
+
+output:
+  format: png
+  quality: 95
+  dpi: 300
+  save_metadata: true
+  generate_preview: true
+  comparison_mode: side_by_side  # side_by_side, overlay, none
+
+logging:
+  level: INFO
+  file: logs/translator.log
+  console: true
+
+performance:
+  use_multiprocessing: true
+  max_workers: 4
+  batch_size: 10
+  cache_ocr_results: true
+  cache_translations: true

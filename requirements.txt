@@ -4,20 +4,11 @@ opencv-python>=4.8.0
 Pillow>=10.0.0
 scipy>=1.11.0
 
-# OCR engines
-paddleocr>=2.7.0
-paddlepaddle>=2.5.0
-pytesseract>=0.3.10
-easyocr>=1.7.0
+# OCR (仅保留 Qwen-OCR)
+dashscope>=1.22.2  # 阿里云百炼 Qwen-OCR
 
-# Deep learning
-torch>=2.0.0
-torchvision>=0.15.0
-
-# Translation
-googletrans==4.0.0rc1
-deep-translator>=1.11.0
-transformers>=4.35.0
+# Translation (仅保留 DeepL，使用 REST API)
+requests>=2.31.0
 
 # Image processing
 scikit-image>=0.21.0

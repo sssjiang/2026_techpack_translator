@@ -15,9 +15,10 @@ class Translator:
     
     def __init__(self, config: dict = None):
         self.config = config or {}
-        self.engine_type = self.config.get('engine', 'google')
-        self.source_lang = self.config.get('source_lang', 'en')
-        self.target_lang = self.config.get('target_lang', 'zh')
+        # 目前仅保留 DeepL 翻译引擎
+        self.engine_type = 'deepl'
+        self.source_lang = self._normalize_lang_code(self.config.get('source_lang', 'en'))
+        self.target_lang = self._normalize_lang_code(self.config.get('target_lang', 'zh'))
         self.use_cache = self.config.get('use_cache', True)
         
         # 加载专业术语库
@@ -31,6 +32,19 @@ class Translator:
         # 初始化翻译引擎
         self.translator = self._init_translator()
         
+    def _normalize_lang_code(self, code: str) -> str:
+        """规范语言代码（根据引擎不同会有不同处理）"""
+        if not code:
+            return 'en'
+        c = code.strip().lower().replace('_', '-')
+        # 常见简写/变体 -> 标准码
+        # 注意：DeepL 使用 'ZH'，Google/deep-translator 使用 'zh-CN'
+        mapping = {
+            'zh': 'zh-CN', 'zh-cn': 'zh-CN', 'chinese': 'zh-CN',
+            'zh-tw': 'zh-TW', 'zh-hk': 'zh-TW', 'zh-hant': 'zh-TW',
+        }
+        return mapping.get(c, code)
+
     def _load_terminology(self, filepath: str) -> Dict:
         """加载专业术语库"""
         if not os.path.exists(filepath):
@@ -59,80 +73,41 @@ class Translator:
             return {}
     
     def _init_translator(self):
-        """初始化翻译引擎"""
-        logger.info(f"Initializing translator: {self.engine_type}")
-        
-        if self.engine_type == 'google':
-            return self._init_google_translator()
-        elif self.engine_type == 'deepl':
-            return self._init_deepl_translator()
-        elif self.engine_type == 'local':
-            return self._init_local_translator()
-        else:
-            logger.warning(f"Unknown translator: {self.engine_type}, using Google")
-            return self._init_google_translator()
-    
-    def _init_google_translator(self):
-        """初始化Google翻译"""
-        try:
-            from googletrans import Translator
-            translator = Translator()
-            logger.info("Google Translator initialized")
-            return translator
-        except ImportError:
-            logger.warning("googletrans not installed, trying deep-translator")
-            try:
-                from deep_translator import GoogleTranslator
-                translator = GoogleTranslator(
-                    source=self.source_lang,
-                    target=self.target_lang
-                )
-                logger.info("Deep Translator (Google) initialized")
-                return translator
-            except ImportError:
-                logger.error("No translation library available")
-                return None
-    
+        """初始化翻译引擎（目前仅 DeepL）"""
+        logger.info("Initializing translator: deepl")
+        return self._init_deepl_translator()
+
     def _init_deepl_translator(self):
-        """初始化DeepL翻译"""
+        """初始化DeepL翻译（免费版，直接使用REST API）"""
         try:
-            from deep_translator import DeeplTranslator
+            import requests
             
             api_key = self.config.get('api_key') or os.getenv('DEEPL_API_KEY')
             if not api_key:
                 logger.error("DeepL API key not found")
+                logger.info("Get your free API key from: https://www.deepl.com/pro-api")
                 return None
             
-            translator = DeeplTranslator(
-                api_key=api_key,
-                source=self.source_lang,
-                target=self.target_lang
-            )
+            # DeepL 使用小写语言代码：zh 而不是 zh-CN（DeepL 不区分简繁体）
+            source = 'ZH' if self.source_lang.startswith('zh') else self.source_lang.upper()
+            target = 'ZH' if self.target_lang.startswith('zh') else self.target_lang.upper()
             
-            logger.info("DeepL Translator initialized")
-            return translator
+            # 免费版 API 端点
+            translator_config = {
+                'api_key': api_key,
+                'api_url': 'https://api-free.deepl.com/v2/translate',  # 免费版端点
+                'source': source,
+                'target': target
+            }
+            
+            logger.info(f"DeepL Translator initialized (Free API: api-free.deepl.com, source={source}, target={target})")
+            return translator_config
             
         except ImportError:
-            logger.error("deep-translator not installed")
+            logger.error("requests not installed. Install with: pip install requests")
             return None
-    
-    def _init_local_translator(self):
-        """初始化本地翻译模型"""
-        try:
-            from transformers import MarianMTModel, MarianTokenizer
-            
-            # 使用Marian模型
-            model_name = f'Helsinki-NLP/opus-mt-{self.source_lang}-{self.target_lang}'
-            
-            logger.info(f"Loading local model: {model_name}")
-            tokenizer = MarianTokenizer.from_pretrained(model_name)
-            model = MarianMTModel.from_pretrained(model_name)
-            
-            logger.info("Local translator initialized")
-            return {'tokenizer': tokenizer, 'model': model}
-            
         except Exception as e:
-            logger.error(f"Failed to load local model: {e}")
+            logger.error(f"Failed to initialize DeepL Translator: {e}")
             return None
     
     def translate(self, text: str, context: Optional[str] = None) -> Dict:
@@ -166,32 +141,36 @@ class Translator:
         if self.use_cache and text in self.cache:
             logger.debug(f"Cache hit: {text}")
             return self.cache[text]
-        
-        # 1. 检查是否应该保持不变（数字、代码、品牌名等）
-        if self._should_not_translate(text):
-            result = {
-                'original': text,
-                'translated': text,
-                'confidence': 1.0,
-                'method': 'no_translation_needed'
-            }
-            self.cache[text] = result
-            return result
-        
-        # 2. 检查术语库
-        terminology_result = self._check_terminology(text)
-        if terminology_result:
-            result = {
-                'original': text,
-                'translated': terminology_result,
-                'confidence': 1.0,
-                'method': 'terminology'
-            }
-            self.cache[text] = result
-            return result
-        
-        # 3. 使用翻译引擎
-        translated = self._translate_with_engine(text)
+
+        # 如果使用 DeepL，引擎优先：不走术语库 / 不翻译规则，所有内容都交给 DeepL
+        if self.engine_type == 'deepl':
+            translated = self._translate_with_engine(text)
+        else:
+            # 1. 检查是否应该保持不变（数字、代码、品牌名等）
+            if self._should_not_translate(text):
+                result = {
+                    'original': text,
+                    'translated': text,
+                    'confidence': 1.0,
+                    'method': 'no_translation_needed'
+                }
+                self.cache[text] = result
+                return result
+            
+            # 2. 检查术语库
+            terminology_result = self._check_terminology(text)
+            if terminology_result:
+                result = {
+                    'original': text,
+                    'translated': terminology_result,
+                    'confidence': 1.0,
+                    'method': 'terminology'
+                }
+                self.cache[text] = result
+                return result
+            
+            # 3. 使用翻译引擎
+            translated = self._translate_with_engine(text)
         
         # 4. 后处理
         translated = self._post_process(text, translated)
@@ -256,35 +235,29 @@ class Translator:
             return text
         
         try:
-            if self.engine_type == 'google':
-                if hasattr(self.translator, 'translate'):
-                    # googletrans
-                    result = self.translator.translate(text, 
-                                                      src=self.source_lang,
-                                                      dest=self.target_lang)
-                    return result.text
-                else:
-                    # deep_translator
-                    return self.translator.translate(text)
-            
-            elif self.engine_type == 'deepl':
-                return self.translator.translate(text)
-            
-            elif self.engine_type == 'local':
-                tokenizer = self.translator['tokenizer']
-                model = self.translator['model']
-                
-                # 编码
-                inputs = tokenizer(text, return_tensors="pt", padding=True)
-                
-                # 翻译
-                translated = model.generate(**inputs)
-                
-                # 解码
-                result = tokenizer.decode(translated[0], skip_special_tokens=True)
-                return result
-            
+            # 目前仅支持 Deepl：engine_type 恒为 'deepl'
+            import requests
+            config = self.translator  # 包含 api_key, api_url, source, target
+
+            headers = {
+                'Authorization': f'DeepL-Auth-Key {config["api_key"]}',
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+
+            data = {
+                'text': text,
+                'source_lang': config['source'],
+                'target_lang': config['target']
+            }
+
+            response = requests.post(config['api_url'], headers=headers, data=data, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+
+            if 'translations' in result and len(result['translations']) > 0:
+                return result['translations'][0]['text']
             else:
+                logger.error(f"Unexpected API response: {result}")
                 return text
                 
         except Exception as e:

@@ -1,8 +1,9 @@
 """
 OCR引擎模块
-支持多种OCR引擎：PaddleOCR, Tesseract, EasyOCR
+当前只保留 Qwen-OCR（阿里云百炼）用于文字识别与定位
 """
 
+import base64
 import cv2
 import numpy as np
 from typing import List, Dict, Tuple, Optional
@@ -11,87 +12,38 @@ import os
 
 
 class OCREngine:
-    """OCR识别引擎"""
+    """OCR识别引擎（仅 Qwen-OCR）"""
     
     def __init__(self, config: dict = None):
         self.config = config or {}
-        self.engine_type = self.config.get('engine', 'paddleocr')
-        self.languages = self.config.get('languages', ['en', 'ch'])
-        self.use_gpu = self.config.get('use_gpu', False)
+        # 目前仅保留 Qwen-OCR
+        self.engine_type = 'qwen_ocr'
         
-        # 初始化OCR引擎
-        self.ocr = self._init_engine()
-        
-    def _init_engine(self):
-        """初始化OCR引擎"""
-        logger.info(f"Initializing OCR engine: {self.engine_type}")
-        
-        if self.engine_type == 'paddleocr':
-            return self._init_paddle_ocr()
-        elif self.engine_type == 'tesseract':
-            return self._init_tesseract()
-        elif self.engine_type == 'easyocr':
-            return self._init_easyocr()
-        else:
-            raise ValueError(f"Unknown OCR engine: {self.engine_type}")
+        # 初始化OCR引擎（主要是存储 Qwen-OCR 相关配置）
+        self.ocr = self._init_qwen_ocr()
     
-    def _init_paddle_ocr(self):
-        """初始化PaddleOCR"""
+    def _init_qwen_ocr(self):
+        """初始化 Qwen-OCR（阿里云百炼 高精识别）"""
         try:
-            from paddleocr import PaddleOCR
-            
-            ocr = PaddleOCR(
-                use_textline_orientation=True,
-                lang='en',  # 主要语言
-                text_det_thresh=self.config.get('det_db_thresh', 0.3),
-                text_det_box_thresh=self.config.get('det_db_box_thresh', 0.6),
-                text_recognition_batch_size=self.config.get('rec_batch_num', 6)
+            import dashscope
+            api_key = self.config.get('api_key') or os.getenv('DASHSCOPE_API_KEY')
+            if not api_key or api_key == 'XXX':
+                logger.warning(
+                    "Qwen-OCR: Set DASHSCOPE_API_KEY or ocr.api_key in config. "
+                    "Get key: https://help.aliyun.com/zh/model-studio/get-api-key"
+                )
+            self._qwen_base_url = self.config.get(
+                'base_url', 'https://dashscope.aliyuncs.com/api/v1'
             )
-            
-            logger.info("PaddleOCR initialized successfully")
-            return ocr
-            
+            self._qwen_model = self.config.get('model', 'qwen-vl-ocr-latest')
+            self._qwen_min_pixels = self.config.get('min_pixels', 32 * 32 * 3)
+            self._qwen_max_pixels = self.config.get('max_pixels', 32 * 32 * 8192)
+            logger.info("Qwen-OCR (advanced_recognition) initialized successfully")
+            return None  # 无本地引擎实例，调用时走 API
         except ImportError:
-            logger.error("PaddleOCR not installed. Install with: pip install paddleocr")
+            logger.error("dashscope not installed. Install with: pip install dashscope")
             raise
-    
-    def _init_tesseract(self):
-        """初始化Tesseract"""
-        try:
-            import pytesseract
-            
-            # 检查Tesseract是否安装
-            try:
-                pytesseract.get_tesseract_version()
-            except:
-                logger.error("Tesseract not found. Install from: https://github.com/tesseract-ocr/tesseract")
-                raise
-            
-            logger.info("Tesseract initialized successfully")
-            return pytesseract
-            
-        except ImportError:
-            logger.error("pytesseract not installed. Install with: pip install pytesseract")
-            raise
-    
-    def _init_easyocr(self):
-        """初始化EasyOCR"""
-        try:
-            import easyocr
-            
-            reader = easyocr.Reader(
-                self.languages,
-                gpu=self.use_gpu,
-                verbose=False
-            )
-            
-            logger.info("EasyOCR initialized successfully")
-            return reader
-            
-        except ImportError:
-            logger.error("EasyOCR not installed. Install with: pip install easyocr")
-            raise
-    
+
     def recognize(self, image: np.ndarray, 
                  protection_mask: Optional[np.ndarray] = None) -> List[Dict]:
         """
@@ -104,16 +56,8 @@ class OCREngine:
         Returns:
             OCR结果列表
         """
-        logger.info("Running OCR recognition...")
-        
-        if self.engine_type == 'paddleocr':
-            results = self._recognize_paddle(image)
-        elif self.engine_type == 'tesseract':
-            results = self._recognize_tesseract(image)
-        elif self.engine_type == 'easyocr':
-            results = self._recognize_easyocr(image)
-        else:
-            results = []
+        logger.info("Running OCR recognition (Qwen-OCR)...")
+        results = self._recognize_qwen_ocr(image)
         
         # 过滤掉保护区域中的文字
         if protection_mask is not None:
@@ -121,115 +65,81 @@ class OCREngine:
         
         logger.info(f"OCR completed: {len(results)} text regions found")
         return results
-    
-    def _recognize_paddle(self, image: np.ndarray) -> List[Dict]:
-        """使用PaddleOCR识别"""
-        result = self.ocr.predict(image)
 
-        ocr_results = []
+    def _recognize_qwen_ocr(self, image: np.ndarray) -> List[Dict]:
+        """使用阿里云 Qwen-OCR 高精识别（带文字定位）"""
+        import dashscope
 
-        if result:
-            for res in result:
-                if hasattr(res, 'rec_texts') and hasattr(res, 'rec_boxes'):
-                    # 新版 PaddleOCR predict() 返回格式
-                    for i, (text, score, box) in enumerate(
-                        zip(res.rec_texts, res.rec_scores, res.rec_boxes)
-                    ):
-                        x_coords = [box[0], box[2]]
-                        y_coords = [box[1], box[3]]
-                        bbox = (
-                            int(min(x_coords)),
-                            int(min(y_coords)),
-                            int(max(x_coords)),
-                            int(max(y_coords))
-                        )
-                        ocr_results.append({
-                            'bbox': bbox,
-                            'text': text,
-                            'confidence': float(score),
-                            'engine': 'paddleocr'
-                        })
-                elif isinstance(res, list):
-                    # 兼容旧版 ocr() 返回格式
-                    for line in res:
-                        if line:
-                            box = line[0]
-                            text_info = line[1]
-                            text = text_info[0]
-                            confidence = text_info[1]
-                            x_coords = [p[0] for p in box]
-                            y_coords = [p[1] for p in box]
-                            bbox = (
-                                int(min(x_coords)),
-                                int(min(y_coords)),
-                                int(max(x_coords)),
-                                int(max(y_coords))
-                            )
-                            ocr_results.append({
-                                'bbox': bbox,
-                                'text': text,
-                                'confidence': confidence,
-                                'engine': 'paddleocr'
-                            })
-        
-        return ocr_results
-    
-    def _recognize_tesseract(self, image: np.ndarray) -> List[Dict]:
-        """使用Tesseract识别"""
-        import pytesseract
-        
-        # 获取详细信息
-        data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-        
-        ocr_results = []
-        n_boxes = len(data['text'])
-        
-        for i in range(n_boxes):
-            if int(data['conf'][i]) > 0:  # 过滤掉置信度为-1的
-                text = data['text'][i].strip()
-                if text:  # 过滤掉空文本
-                    x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
-                    bbox = (x, y, x + w, y + h)
-                    confidence = int(data['conf'][i]) / 100.0
-                    
-                    ocr_results.append({
-                        'bbox': bbox,
-                        'text': text,
-                        'confidence': confidence,
-                        'engine': 'tesseract'
-                    })
-        
-        return ocr_results
-    
-    def _recognize_easyocr(self, image: np.ndarray) -> List[Dict]:
-        """使用EasyOCR识别"""
-        results = self.ocr.readtext(image)
-        
-        ocr_results = []
-        
-        for detection in results:
-            box, text, confidence = detection
-            
-            # 转换box格式
-            x_coords = [p[0] for p in box]
-            y_coords = [p[1] for p in box]
-            bbox = (
-                int(min(x_coords)),
-                int(min(y_coords)),
-                int(max(x_coords)),
-                int(max(y_coords))
+        api_key = self.config.get('api_key') or os.getenv('DASHSCOPE_API_KEY')
+        if not api_key or api_key == 'XXX':
+            logger.error("Qwen-OCR requires DASHSCOPE_API_KEY or ocr.api_key")
+            return []
+
+        # 图像转 Base64
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        _, buf = cv2.imencode('.png', image)
+        b64 = base64.b64encode(buf.tobytes()).decode('utf-8')
+        data_url = f"data:image/png;base64,{b64}"
+
+        # 临时切换 base_url（若配置了地域）
+        old_base = getattr(dashscope, 'base_http_api_url', None)
+        try:
+            dashscope.base_http_api_url = self._qwen_base_url
+            response = dashscope.MultiModalConversation.call(
+                api_key=api_key,
+                model=self._qwen_model,
+                messages=[{
+                    'role': 'user',
+                    'content': [{
+                        'image': data_url,
+                        'min_pixels': self._qwen_min_pixels,
+                        'max_pixels': self._qwen_max_pixels,
+                        'enable_rotate': self.config.get('enable_rotate', False),
+                    }]
+                }],
+                ocr_options={'task': 'advanced_recognition'},
             )
-            
-            ocr_results.append({
-                'bbox': bbox,
-                'text': text,
-                'confidence': confidence,
-                'engine': 'easyocr'
-            })
-        
+        finally:
+            if old_base is not None:
+                dashscope.base_http_api_url = old_base
+
+        ocr_results = []
+        if not response or 'output' not in response:
+            logger.warning("Qwen-OCR returned no output")
+            return ocr_results
+
+        choices = response.get('output', {}).get('choices', [])
+        if not choices:
+            return ocr_results
+
+        content = choices[0].get('message', {}).get('content', [])
+        for block in content:
+            ocr_result = block.get('ocr_result')
+            if not ocr_result:
+                continue
+            words_info = ocr_result.get('words_info', [])
+            for w in words_info:
+                text = w.get('text', '').strip()
+                if not text:
+                    continue
+                location = w.get('location')  # [x1,y1, x2,y2, x3,y3, x4,y4]
+                if location and len(location) >= 8:
+                    xs = [location[i] for i in range(0, 8, 2)]
+                    ys = [location[i] for i in range(1, 8, 2)]
+                    bbox = (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))
+                else:
+                    bbox = (0, 0, 0, 0)
+                ocr_results.append({
+                    'bbox': bbox,
+                    'text': text,
+                    'confidence': 1.0,
+                    'engine': 'qwen_ocr',
+                })
+
         return ocr_results
-    
-    def _filter_protected_regions(self, results: List[Dict], 
+
+    def _filter_protected_regions(self, results: List[Dict],
                                   mask: np.ndarray) -> List[Dict]:
         """过滤掉保护区域中的文字"""
         filtered = []
