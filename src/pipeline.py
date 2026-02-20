@@ -164,11 +164,19 @@ class TechPackTranslator:
                 protection_mask
             )
             
-            # 保存输出（若输出路径含目录则先创建；同名文件会直接覆盖）
+            # 保存输出（若输出路径含目录则先创建；先删后写以保证能覆盖，避免被占用时无法覆盖）
             output_dir = os.path.dirname(output_path)
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)
-            cv2.imwrite(output_path, output_image)
+            # 若已存在则先删除，避免部分系统/占用情况下 imwrite 无法覆盖
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except OSError as e:
+                    logger.warning(f"Cannot remove existing output file (may be in use): {e}")
+            ok = cv2.imwrite(output_path, output_image)
+            if not ok:
+                raise IOError(f"cv2.imwrite failed to save: {output_path} (check path, permissions, or close the file if open elsewhere)")
             logger.info(f"Output saved to: {output_path}")
             
             # 生成对比图（如果配置启用）
@@ -177,12 +185,19 @@ class TechPackTranslator:
                 comp_dir = os.path.dirname(comparison_path)
                 if comp_dir:
                     os.makedirs(comp_dir, exist_ok=True)
+                if os.path.exists(comparison_path):
+                    try:
+                        os.remove(comparison_path)
+                    except OSError:
+                        pass
                 comparison = self.renderer.create_comparison(
                     original_image, output_image,
                     mode=self.config.get('output', {}).get('comparison_mode', 'side_by_side')
                 )
-                cv2.imwrite(comparison_path, comparison)
-                logger.info(f"Comparison saved to: {comparison_path}")
+                if not cv2.imwrite(comparison_path, comparison):
+                    logger.warning(f"Failed to save comparison image: {comparison_path}")
+                else:
+                    logger.info(f"Comparison saved to: {comparison_path}")
             
             # 完成
             elapsed_time = time.time() - start_time
