@@ -103,18 +103,23 @@ class TechPackTranslator:
             
             if save_intermediate:
                 cv2.imwrite('debug_enhanced.png', enhanced_image)
-            
-            # 步骤2: OCR初步识别（用于检测标注）
-            logger.info("Step 2/6: Initial OCR for annotation detection...")
-            initial_ocr_results = self.ocr_engine.recognize(enhanced_image)
-            stats['initial_text_regions'] = len(initial_ocr_results)
-            
-            if save_intermediate:
-                vis_ocr = self.ocr_engine.visualize_ocr_results(
-                    enhanced_image.copy(), initial_ocr_results
-                )
-                cv2.imwrite('debug_ocr.png', vis_ocr)
-            
+
+            # 步骤2: 仅当使用「标注优先」策略时才做初次 OCR（供设计包标注定位）；视觉特征模式跳过以省一次 API 调用
+            detection_mode = (self.config.get('detection', {}).get('design_pack_detection_mode') or 'visual_features').strip().lower()
+            if detection_mode == 'annotation_first':
+                logger.info("Step 2/6: Initial OCR for annotation detection...")
+                initial_ocr_results = self.ocr_engine.recognize(enhanced_image)
+                stats['initial_text_regions'] = len(initial_ocr_results)
+                if save_intermediate:
+                    vis_ocr = self.ocr_engine.visualize_ocr_results(
+                        enhanced_image.copy(), initial_ocr_results
+                    )
+                    cv2.imwrite('debug_ocr.png', vis_ocr)
+            else:
+                initial_ocr_results = []
+                stats['initial_text_regions'] = 0
+                logger.info("Step 2/6: Skipped (visual_features mode, no initial OCR needed)")
+
             # 步骤3: 检测设计包图像区域
             logger.info("Step 3/6: Detecting design pack image regions...")
             design_regions, protection_mask = self.design_detector.detect(

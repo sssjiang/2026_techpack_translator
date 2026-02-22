@@ -23,36 +23,40 @@ class DesignPackDetector:
         ])
         self.confidence_threshold = self.config.get('confidence_threshold', 0.7)
         self.margin = self.config.get('protection_margin', 10)
-        
-    def detect(self, image: np.ndarray, 
+        # 检测策略: visual_features（仅视觉） | annotation_first（先标注再回退视觉）
+        self.detection_mode = (self.config.get('design_pack_detection_mode') or 'visual_features').strip().lower()
+        if self.detection_mode not in ('visual_features', 'annotation_first'):
+            self.detection_mode = 'visual_features'
+
+    def detect(self, image: np.ndarray,
                ocr_results: List[Dict]) -> Tuple[List[Tuple], np.ndarray]:
         """
         检测设计包图像区域
-        
+
         Args:
             image: 输入图像
-            ocr_results: OCR识别结果列表
-            
+            ocr_results: OCR识别结果列表（annotation_first 时用于标注定位）
+
         Returns:
             (design_pack_regions, protection_mask)
         """
         logger.info("Detecting design pack image regions...")
-        
         regions = []
-        
-        # 方法1: 基于文本标注检测
-        text_based_regions = self._detect_by_annotation(image, ocr_results)
-        regions.extend(text_based_regions)
-        
-        # 方法2: 基于视觉特征检测（如果方法1没找到）
-        if len(regions) == 0:
-            logger.info("No annotation found, trying visual feature detection...")
-            visual_regions = self._detect_by_visual_features(image)
-            regions.extend(visual_regions)
-        
-        # 创建保护蒙版
+
+        if self.detection_mode == 'visual_features':
+            # 方案二：仅用视觉特征（默认）
+            logger.info("Using visual feature detection (config: design_pack_detection_mode=visual_features)")
+            regions = self._detect_by_visual_features(image)
+        else:
+            # 方案一：先标注再回退视觉
+            logger.info("Using annotation-first detection (config: design_pack_detection_mode=annotation_first)")
+            text_based_regions = self._detect_by_annotation(image, ocr_results)
+            regions.extend(text_based_regions)
+            if len(regions) == 0:
+                logger.info("No annotation found, falling back to visual feature detection...")
+                regions = self._detect_by_visual_features(image)
+
         mask = self._create_protection_mask(image.shape[:2], regions)
-        
         logger.info(f"Found {len(regions)} design pack region(s)")
         return regions, mask
     

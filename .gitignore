@@ -72,3 +72,5 @@ htmlcov/
 config/config.yaml
 
 .specstory/
+
+tests/output/
