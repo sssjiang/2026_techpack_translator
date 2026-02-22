@@ -23,6 +23,9 @@ class ImageRenderer:
         self.default_font = self.font_config.get('default', 'SimHei')
         self.preserve_layout = self.config.get('preserve_layout', True)
         self.auto_resize = self.config.get('auto_resize', True)
+        # 整体放大倍数：先把图放大 N 倍再渲染文字，输出高分辨率图（解决小图文字糊的根本问题）
+        self.render_scale = int(self.config.get('render_scale', 3))
+        self.render_scale = max(1, min(6, self.render_scale))
         
         # 加载字体
         self.fonts = self._load_fonts()
@@ -111,38 +114,46 @@ class ImageRenderer:
         Returns:
             渲染后的图像
         """
-        logger.info("Rendering translated image...")
-        
-        # 转换为PIL Image
-        output_image = Image.fromarray(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB))
+        scale = self.render_scale
+        h, w = original_image.shape[:2]
+        logger.info(f"Rendering translated image... (input {w}x{h}, render_scale={scale}x → {w*scale}x{h*scale})")
+
+        # 用高质量插值放大原图，让文字区域有足够像素
+        if scale > 1:
+            upscaled_bgr = cv2.resize(original_image, (w * scale, h * scale),
+                                      interpolation=cv2.INTER_CUBIC)
+        else:
+            upscaled_bgr = original_image.copy()
+
+        output_image = Image.fromarray(cv2.cvtColor(upscaled_bgr, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(output_image)
-        
-        # 遍历每个翻译结果
+
         for i, (ocr_result, trans_result) in enumerate(zip(ocr_results, translation_results)):
-            bbox = ocr_result['bbox']
             original_text = trans_result['original']
             translated_text = trans_result['translated']
-            
-            # 如果翻译和原文相同，跳过
             if original_text == translated_text:
                 continue
-            
-            # 清除原文字区域
+
+            # 把 bbox 坐标按 scale 放大
+            x1, y1, x2, y2 = ocr_result['bbox']
+            bbox = (x1 * scale, y1 * scale, x2 * scale, y2 * scale)
+
             self._clear_text_region(output_image, bbox)
-            
-            # 渲染新文字
-            self._render_text(draw, bbox, translated_text, ocr_result)
-        
-        # 恢复保护区域
+            self._render_text(output_image, draw, bbox, translated_text, ocr_result)
+
+        # 恢复保护区域（同样在放大后的尺度上操作）
         if protection_mask is not None:
+            if scale > 1:
+                upscaled_mask = cv2.resize(protection_mask, (w * scale, h * scale),
+                                           interpolation=cv2.INTER_NEAREST)
+            else:
+                upscaled_mask = protection_mask
             output_image = self._restore_protected_regions(
-                output_image, original_image, protection_mask
+                output_image, upscaled_bgr, upscaled_mask
             )
-        
-        # 转换回OpenCV格式
+
         output_cv = cv2.cvtColor(np.array(output_image), cv2.COLOR_RGB2BGR)
-        
-        logger.info("Rendering completed")
+        logger.info(f"Rendering completed, output size: {output_cv.shape[1]}x{output_cv.shape[0]}")
         return output_cv
     
     def _clear_text_region(self, image: Image.Image, bbox: Tuple):
@@ -180,29 +191,28 @@ class ImageRenderer:
         # 默认白色
         return (255, 255, 255)
     
-    def _render_text(self, draw: ImageDraw.Draw, bbox: Tuple,
+    def _render_text(self, image: Image.Image, draw: ImageDraw.Draw, bbox: Tuple,
                     text: str, ocr_result: Dict):
-        """渲染文字"""
+        """在已放大的图像上直接渲染文字"""
         x1, y1, x2, y2 = bbox
-        bbox_width = x2 - x1
-        bbox_height = y2 - y1
+        bbox_width = int(x2 - x1)
+        bbox_height = int(y2 - y1)
+        if bbox_width <= 0 or bbox_height <= 0:
+            return
 
-        # 动态选择字体大小，适配 bbox
         font, font_size = self._select_font(text, bbox_width, bbox_height)
 
-        # 用实际 textbbox 计算位置
         try:
-            text_bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            text_height = text_bbox[3] - text_bbox[1]
-        except:
-            text_width = len(text) * font_size
+            tb = draw.textbbox((0, 0), text, font=font)
+            text_width = tb[2] - tb[0]
+            text_height = tb[3] - tb[1]
+        except Exception:
+            text_width = font.getlength(text)
             text_height = font_size
 
-        # 居中对齐
-        text_x = x1 + (bbox_width - text_width) / 2
-        text_y = y1 + (bbox_height - text_height) / 2
-
+        # 居中对齐，使用整数坐标
+        text_x = int(x1 + (bbox_width - text_width) / 2)
+        text_y = int(y1 + (bbox_height - text_height) / 2)
         draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
 
     def _select_font(self, text: str, bbox_width: int, bbox_height: int
@@ -211,9 +221,8 @@ class ImageRenderer:
         if not self._cjk_font_path:
             return ImageFont.load_default(), 12
 
-        # 目标：字体高度不超过 bbox 高度，文字总宽度不超过 bbox 宽度
-        # 从 bbox 高度的 70% 开始尝试，逐步缩小
-        max_size = max(8, int(bbox_height * 0.7))
+        # 中文字形占满行高比例更高，用 88% 起步（放大后 bbox 更大，字号也更大）
+        max_size = max(8, int(bbox_height * 0.88))
         min_size = 6
 
         for size in range(max_size, min_size - 1, -1):
