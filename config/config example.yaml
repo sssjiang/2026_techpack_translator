@@ -43,12 +43,20 @@ translation:
   # - 免费版 Key 以 :fx 结尾，例如 xxxxxxxx:fx
   # - 可直接写在 api_key 字段，或通过环境变量 DEEPL_API_KEY 提供
 
+# -----------------------------------------------------------------------------
+# 设计包区域检测（用于保护图案不被翻译/覆盖）
+# -----------------------------------------------------------------------------
 detection:
+  # 检测策略（二选一）
+  # visual_features: 仅用视觉特征（HSV 饱和度 + 轮廓），不依赖 OCR，只调 1 次 OCR，默认推荐
+  # annotation_first: 先用 "design pack image" 标注 + 箭头定位，找不到再回退视觉，会多调 1 次 OCR
+  design_pack_detection_mode: visual_features  # 默认第二种
+
   methods:
     - text_annotation
     - visual_features
     - ml_classifier
-  keywords:
+  keywords:   # 仅 annotation_first 时用于匹配标注文字
     - "design pack image"
     - "design pack"
     - "设计包图像"
